@@ -1,0 +1,21 @@
+# Config overrides
+config.local.php
+.env
+
+# Database & runtime files
+storage/*.sqlite
+storage/*.db
+rate_limit.json
+
+# Legacy files
+test.php
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Vendor (if Composer ever added)
+vendor/
