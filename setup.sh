@@ -24,17 +24,17 @@ error()   { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 ask() {
     local prompt="$1" default="${2:-}" reply
     if [[ -n "$default" ]]; then
-        read -rp "$(echo -e "${CYAN}$prompt${NC} [$default]: ")" reply
+        read -rp "$(echo -e "${CYAN}$prompt${NC} [$default]: ")" reply </dev/tty
         echo "${reply:-$default}"
     else
-        read -rp "$(echo -e "${CYAN}$prompt${NC}: ")" reply
+        read -rp "$(echo -e "${CYAN}$prompt${NC}: ")" reply </dev/tty
         echo "$reply"
     fi
 }
 
 confirm() {
     local prompt="$1" reply
-    read -rp "$(echo -e "${YELLOW}$prompt [y/N]:${NC} ")" reply
+    read -rp "$(echo -e "${YELLOW}$prompt [y/N]:${NC} ")" reply </dev/tty
     [[ "$reply" =~ ^[Yy]$ ]]
 }
 
@@ -449,7 +449,7 @@ guided_install() {
     echo "  3) Skip (no protection)"
     echo ""
     local key_choice
-    read -rp "  Choose [1]: " key_choice
+    read -rp "  Choose [1]: " key_choice </dev/tty
     key_choice="${key_choice:-1}"
 
     case "$key_choice" in
@@ -547,7 +547,7 @@ main() {
     while true; do
         menu
         local choice
-        read -rp "Select option: " choice
+        read -rp "Select option: " choice </dev/tty
 
         case "$choice" in
             1) guided_install ;;

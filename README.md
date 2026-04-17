@@ -64,7 +64,13 @@ GET /yhjmk  →  302  Location: https://example.com/very/long/path
 
 ## Quick Start (Automated)
 
-One-command setup for fresh Debian/Ubuntu servers:
+One-liner for a fresh Debian/Ubuntu server — no need to clone first:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/forestsnet/short-service-php/main/setup.sh)
+```
+
+Or clone and run locally:
 
 ```bash
 git clone https://github.com/forestsnet/short-service-php.git /opt/short
