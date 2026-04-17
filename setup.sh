@@ -42,6 +42,115 @@ require_root() {
     [[ $EUID -eq 0 ]] || error "This script must be run as root (sudo bash setup.sh)"
 }
 
+# ── DNS / Network checks ───────────────────────────────────────────────────
+
+get_server_ip() {
+    # Try multiple sources for external IP
+    local ip
+    ip=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null) \
+        || ip=$(curl -s --max-time 5 https://ifconfig.me 2>/dev/null) \
+        || ip=$(curl -s --max-time 5 https://icanhazip.com 2>/dev/null) \
+        || ip=""
+    echo "$ip"
+}
+
+check_domain_dns() {
+    local domain="$1"
+
+    # Make sure dig/host is available (install dnsutils if missing)
+    if ! command -v dig &>/dev/null; then
+        apt install -y dnsutils &>/dev/null || true
+    fi
+
+    info "Checking DNS for ${domain}..."
+
+    local server_ip
+    server_ip=$(get_server_ip)
+    if [[ -z "$server_ip" ]]; then
+        warn "Could not determine this server's public IP. Skipping DNS check."
+        return 0
+    fi
+    info "This server's public IP: ${server_ip}"
+
+    # Resolve domain A/AAAA records
+    local domain_ips
+    domain_ips=$(dig +short A "$domain" 2>/dev/null; dig +short AAAA "$domain" 2>/dev/null)
+
+    if [[ -z "$domain_ips" ]]; then
+        warn "Domain ${domain} does not resolve to any IP address."
+        warn "Make sure you have an A record pointing ${domain} -> ${server_ip}"
+        if ! confirm "Continue anyway?"; then
+            return 1
+        fi
+        return 0
+    fi
+
+    info "Domain ${domain} resolves to: $(echo $domain_ips | tr '\n' ' ')"
+
+    # Check if any resolved IP matches our server
+    local match=false
+    while IFS= read -r ip; do
+        [[ -z "$ip" ]] && continue
+        if [[ "$ip" == "$server_ip" ]]; then
+            match=true
+            break
+        fi
+    done <<< "$domain_ips"
+
+    if $match; then
+        success "Domain ${domain} correctly points to this server (${server_ip})."
+    else
+        warn "Domain ${domain} does NOT point to this server."
+        warn "  Domain resolves to: $(echo $domain_ips | tr '\n' ' ')"
+        warn "  This server's IP:   ${server_ip}"
+        warn "SSL certificate will fail if the domain is not pointed here."
+        if ! confirm "Continue anyway?"; then
+            return 1
+        fi
+    fi
+    return 0
+}
+
+check_port_open() {
+    local port="$1"
+    if command -v ss &>/dev/null; then
+        if ss -tlnp | grep -q ":${port} "; then
+            return 0
+        fi
+    elif command -v netstat &>/dev/null; then
+        if netstat -tlnp | grep -q ":${port} "; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+check_http_reachable() {
+    local domain="$1"
+    info "Checking if http://${domain} is reachable from outside..."
+
+    local http_code
+    http_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${domain}/" 2>/dev/null || echo "000")
+
+    if [[ "$http_code" == "000" ]]; then
+        warn "Could not reach http://${domain}/ — connection failed."
+        warn "Check that port 80 is open in your firewall (ufw, iptables, cloud security group)."
+
+        if check_port_open 80; then
+            info "Port 80 is listening locally — the issue is likely an external firewall or security group."
+        else
+            warn "Port 80 is NOT listening locally. Is Apache running?"
+        fi
+
+        if ! confirm "Continue anyway?"; then
+            return 1
+        fi
+    else
+        success "http://${domain}/ is reachable (HTTP ${http_code})."
+    fi
+    return 0
+}
+
 # ── Detect PHP version ──────────────────────────────────────────────────────
 
 detect_php_version() {
@@ -197,7 +306,13 @@ VHOSTEOF
 # ── Step 7: SSL Certificate ─────────────────────────────────────────────────
 
 step_ssl() {
-    local domain="$1"
+    local domain="$1" skip_checks="${2:-false}"
+
+    if [[ "$skip_checks" != "true" ]]; then
+        check_domain_dns "$domain" || return 1
+        check_http_reachable "$domain" || return 1
+    fi
+
     info "Requesting SSL certificate for ${domain}..."
     certbot --apache -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email || {
         warn "Certbot failed. You can run it manually later: certbot --apache -d ${domain}"
@@ -247,8 +362,9 @@ menu() {
     echo "  3) Deploy/update application only"
     echo "  4) Configure application"
     echo "  5) Setup Apache virtual host"
-    echo "  6) Issue SSL certificate"
-    echo "  7) Verify installation"
+    echo "  6) Check domain DNS"
+    echo "  7) Issue SSL certificate"
+    echo "  8) Verify installation"
     echo "  0) Exit"
     echo ""
 }
@@ -277,10 +393,16 @@ full_install() {
     step_config "$domain" "$api_key"
     step_vhost "$domain" "$php_ver"
 
-    if confirm "Issue SSL certificate now? (domain must point to this server)"; then
-        step_ssl "$domain"
+    echo ""
+    if check_domain_dns "$domain" && check_http_reachable "$domain"; then
+        if confirm "DNS looks good. Issue SSL certificate now?"; then
+            step_ssl "$domain" true
+        else
+            warn "Skipping SSL. Run later: certbot --apache -d ${domain}"
+        fi
     else
-        warn "Skipping SSL. Run later: certbot --apache -d ${domain}"
+        warn "Skipping SSL due to DNS/connectivity issues."
+        warn "Fix DNS, then run: certbot --apache -d ${domain}"
     fi
 
     step_enable "$php_ver"
@@ -338,9 +460,15 @@ main() {
             6)
                 local domain
                 domain=$(ask "Enter your domain" "s.example.com")
-                step_ssl "$domain"
+                check_domain_dns "$domain"
+                check_http_reachable "$domain"
                 ;;
             7)
+                local domain
+                domain=$(ask "Enter your domain" "s.example.com")
+                step_ssl "$domain"
+                ;;
+            8)
                 local domain
                 domain=$(ask "Enter your domain" "s.example.com")
                 step_verify "$domain"
