@@ -27,6 +27,9 @@ return [
         ],
     ],
 
+    // API key for generating short links (empty = no auth required)
+    'api_key' => '',
+
     // Allowed redirect domains (empty = allow all)
     'allowed_domains' => [],
 ];

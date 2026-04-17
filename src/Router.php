@@ -31,6 +31,10 @@ class Router
 
         // POST /generate-token
         if ($uri === '/generate-token' && $method === 'POST') {
+            if (!$this->authenticate()) {
+                $this->jsonResponse(['message' => 'Invalid or missing API key.'], 401);
+                return;
+            }
             $this->handleGenerate();
             return;
         }
@@ -95,6 +99,16 @@ class Router
         http_response_code($status);
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    private function authenticate(): bool
+    {
+        $apiKey = Config::get('api_key', '');
+        if ($apiKey === '') {
+            return true;
+        }
+        $provided = $_SERVER['HTTP_X_API_KEY'] ?? '';
+        return hash_equals($apiKey, $provided);
     }
 
     private function clientIp(): string

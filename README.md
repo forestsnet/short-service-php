@@ -10,6 +10,7 @@ No frameworks, no Composer — just drop it on any Apache + PHP-FPM server.
 - Usage counter per token
 - SQLite-based rate limiting (5 requests/min per IP by default)
 - IP whitelist for rate limit bypass
+- Optional API key authentication for link generation
 - Optional domain allowlist for redirect targets
 - CORS headers out of the box
 - Security headers (CSP, X-Frame-Options, X-Content-Type-Options, etc.)
@@ -37,6 +38,12 @@ Create or retrieve a short token for a URL.
 }
 ```
 
+**Headers** (if `api_key` is configured):
+```
+X-Api-Key: your-secret-key
+```
+
+**Response `401`** — invalid or missing API key  
 **Response `429`** — rate limit exceeded  
 **Response `400`** — missing or invalid URL  
 **Response `403`** — domain not in allowlist
@@ -85,6 +92,7 @@ See [INSTALL.md](INSTALL.md) for full Debian 13 setup with Apache and SSL.
 | `rate_limit.max_requests` | `5` | Max requests per window |
 | `rate_limit.window_seconds` | `60` | Rate limit window (seconds) |
 | `rate_limit.whitelist` | `[]` | IPs that bypass rate limiting |
+| `api_key` | `''` | API key for generating links (empty = no auth) |
 | `allowed_domains` | `[]` | Allowed redirect domains (empty = all) |
 
 ## File Structure
