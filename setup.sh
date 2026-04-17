@@ -357,16 +357,23 @@ menu() {
     echo -e "${CYAN}║   Short Service PHP — Setup Wizard       ║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════╝${NC}"
     echo ""
-    echo "  1) Full install (recommended for fresh servers)"
-    echo "  2) Install dependencies only"
-    echo "  3) Deploy/update application only"
-    echo "  4) Configure application"
-    echo "  5) Setup Apache virtual host"
-    echo "  6) Check domain DNS"
-    echo "  7) Issue SSL certificate"
-    echo "  8) Verify installation"
+    echo -e "  ${GREEN}1) Guided install with API key (recommended)${NC}"
+    echo "  2) Full install (quick, optional API key)"
+    echo "  ──────────────────────────────────"
+    echo "  3) Install dependencies only"
+    echo "  4) Deploy/update application only"
+    echo "  5) Configure application"
+    echo "  6) Setup Apache virtual host"
+    echo "  7) Check domain DNS"
+    echo "  8) Issue SSL certificate"
+    echo "  9) Verify installation"
     echo "  0) Exit"
     echo ""
+}
+
+generate_api_key() {
+    # Generate a random 32-char hex key
+    head -c 32 /dev/urandom | xxd -p | head -c 32
 }
 
 full_install() {
@@ -408,14 +415,126 @@ full_install() {
     step_enable "$php_ver"
     step_verify "$domain"
 
+    print_summary "$domain" "$api_key"
+}
+
+guided_install() {
     echo ""
-    success "Installation complete!"
+    echo -e "${CYAN}══════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}  Guided Setup — step by step with API key    ${NC}"
+    echo -e "${CYAN}══════════════════════════════════════════════${NC}"
+    echo ""
+
+    local domain php_ver api_key
+
+    # ── 1. Domain ────────────────────────────────────────────────────────────
+    domain=$(ask "Enter your domain (e.g. s.example.com)")
+    [[ -z "$domain" ]] && { error "Domain is required."; return; }
+
+    # ── 2. DNS pre-check ─────────────────────────────────────────────────────
+    echo ""
+    info "Step 1/8 — Checking DNS for ${domain}..."
+    if ! check_domain_dns "$domain"; then
+        warn "You can fix DNS and re-run this later."
+        return
+    fi
+
+    # ── 3. API key ───────────────────────────────────────────────────────────
+    echo ""
+    info "Step 2/8 — API key setup"
+    echo -e "  An API key protects ${CYAN}POST /generate-token${NC} from unauthorized use."
+    echo ""
+    echo "  1) Generate random key automatically"
+    echo "  2) Enter my own key"
+    echo "  3) Skip (no protection)"
+    echo ""
+    local key_choice
+    read -rp "  Choose [1]: " key_choice
+    key_choice="${key_choice:-1}"
+
+    case "$key_choice" in
+        1)
+            api_key=$(generate_api_key)
+            success "Generated API key: ${api_key}"
+            ;;
+        2)
+            api_key=$(ask "Enter your API key")
+            [[ -z "$api_key" ]] && { warn "Empty key — skipping API protection."; api_key=""; }
+            ;;
+        *) api_key="" ;;
+    esac
+
+    # ── 4. System update & deps ──────────────────────────────────────────────
+    echo ""
+    info "Step 3/8 — System update & dependencies"
+    if ! confirm "Update system and install Apache, PHP, certbot?"; then
+        warn "Cannot continue without dependencies."; return
+    fi
+    php_ver=$(detect_php_version)
+    info "PHP version: ${php_ver}"
+    step_update
+    step_deps "$php_ver"
+
+    # ── 5. Apache modules ────────────────────────────────────────────────────
+    echo ""
+    info "Step 4/8 — Apache modules"
+    step_apache_modules "$php_ver"
+
+    # ── 6. Deploy app ────────────────────────────────────────────────────────
+    echo ""
+    info "Step 5/8 — Deploy application"
+    step_deploy
+
+    # ── 7. Config ────────────────────────────────────────────────────────────
+    echo ""
+    info "Step 6/8 — Application configuration"
+    step_config "$domain" "$api_key"
+
+    # ── 8. Virtual host ──────────────────────────────────────────────────────
+    echo ""
+    info "Step 7/8 — Apache virtual host"
+    step_vhost "$domain" "$php_ver"
+
+    # ── 9. SSL ───────────────────────────────────────────────────────────────
+    echo ""
+    info "Step 8/8 — SSL certificate"
+    if check_http_reachable "$domain"; then
+        step_ssl "$domain" true
+    else
+        warn "Skipping SSL. Fix connectivity, then run: certbot --apache -d ${domain}"
+    fi
+
+    # ── 10. Enable & verify ──────────────────────────────────────────────────
+    step_enable "$php_ver"
+    echo ""
+    step_verify "$domain"
+
+    print_summary "$domain" "$api_key"
+}
+
+print_summary() {
+    local domain="$1" api_key="$2"
+    echo ""
+    echo -e "${GREEN}╔══════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║          Installation complete!          ║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════════╝${NC}"
+    echo ""
     echo -e "  URL:    ${GREEN}https://${domain}${NC}"
     echo -e "  Config: ${GREEN}${INSTALL_DIR}/config.local.php${NC}"
     echo -e "  Logs:   ${GREEN}/var/log/apache2/short-*.log${NC}"
     if [[ -n "$api_key" ]]; then
+        echo ""
         echo -e "  API key: ${GREEN}${api_key}${NC}"
-        echo -e "  Usage:   ${CYAN}curl -X POST https://${domain}/generate-token -H 'X-Api-Key: ${api_key}' ...${NC}"
+        echo ""
+        echo -e "  ${CYAN}Example usage:${NC}"
+        echo -e "  curl -s -X POST https://${domain}/generate-token \\"
+        echo -e "       -H 'Content-Type: application/json' \\"
+        echo -e "       -H 'X-Api-Key: ${api_key}' \\"
+        echo -e "       -d '{\"url\":\"https://example.com\"}'"
+    else
+        echo ""
+        echo -e "  ${YELLOW}No API key configured — anyone can generate links.${NC}"
+        echo -e "  To add one later: edit ${INSTALL_DIR}/config.local.php"
     fi
     echo ""
 }
@@ -431,8 +550,9 @@ main() {
         read -rp "Select option: " choice
 
         case "$choice" in
-            1) full_install ;;
-            2)
+            1) guided_install ;;
+            2) full_install ;;
+            3)
                 local php_ver
                 php_ver=$(detect_php_version)
                 step_update
@@ -440,8 +560,8 @@ main() {
                 step_apache_modules "$php_ver"
                 step_enable "$php_ver"
                 ;;
-            3) step_deploy ;;
-            4)
+            4) step_deploy ;;
+            5)
                 local domain api_key
                 domain=$(ask "Enter your domain" "s.example.com")
                 if confirm "Protect with API key?"; then
@@ -451,24 +571,24 @@ main() {
                 fi
                 step_config "$domain" "$api_key"
                 ;;
-            5)
+            6)
                 local domain php_ver
                 domain=$(ask "Enter your domain" "s.example.com")
                 php_ver=$(detect_php_version)
                 step_vhost "$domain" "$php_ver"
                 ;;
-            6)
+            7)
                 local domain
                 domain=$(ask "Enter your domain" "s.example.com")
                 check_domain_dns "$domain"
                 check_http_reachable "$domain"
                 ;;
-            7)
+            8)
                 local domain
                 domain=$(ask "Enter your domain" "s.example.com")
                 step_ssl "$domain"
                 ;;
-            8)
+            9)
                 local domain
                 domain=$(ask "Enter your domain" "s.example.com")
                 step_verify "$domain"
