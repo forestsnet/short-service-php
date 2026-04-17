@@ -62,7 +62,18 @@ GET /yhjmk  →  302  Location: https://example.com/very/long/path
 
 ---
 
-## Quick Start
+## Quick Start (Automated)
+
+One-command setup for fresh Debian/Ubuntu servers:
+
+```bash
+git clone https://github.com/forestsnet/short-service-php.git /opt/short
+sudo bash /opt/short/setup.sh
+```
+
+The interactive wizard will guide you through domain setup, API key, Apache, SSL, and verification.
+
+## Quick Start (Manual)
 
 ```bash
 # Clone
@@ -78,7 +89,7 @@ chown -R www-data:www-data storage/
 chmod 755 storage/
 ```
 
-See [INSTALL.md](INSTALL.md) for full Debian 13 setup with Apache and SSL.
+See [INSTALL.md](INSTALL.md) for full manual Debian 13 setup with Apache and SSL.
 
 ## Configuration
 
@@ -112,6 +123,7 @@ short-service-php/
 │   └── .gitkeep        # db.sqlite lives here (gitignored)
 ├── config.php          # Default config (commit-safe template)
 ├── config.local.php    # Your real config (gitignored)
+├── setup.sh            # Interactive setup wizard
 ├── .htaccess           # Root → public/ redirect
 ├── .gitignore
 ├── README.md
